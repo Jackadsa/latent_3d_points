@@ -20,22 +20,6 @@ REGISTER_OP("MatchCostGrad")
 	.Output("grad1: float32")
 	.Output("grad2: float32");
 
-const double pi = 3.14159265358979323846;
-
-double get_dphi(double x1, double x2)
-{
-    const double pi = 3.14159265358979323846;
-    double dphi = x2-x1;
-    dphi = dphi + pi;
-    //int wnumber = int(floor(dphi/(2*pi)));
-    //int sign = +1;
-    //if(wnumber % 2 == 1) sign = -1; 
-    //dphi = sign*fmod(dphi,(2*pi));
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
-    return dphi;
-}
-
 void approxmatch_cpu(int b,int n,int m,const float * xyz1,const float * xyz2,float * match){
 	for (int i=0;i<b;i++){
 		int factorl=std::max(n,m)/n;
@@ -55,8 +39,7 @@ void approxmatch_cpu(int b,int n,int m,const float * xyz1,const float * xyz2,flo
 				for (int l=0;l<m;l++){
 					double x2=xyz2[l*2+0];
 					double y2=xyz2[l*2+1];
-                    double dphi = get_dphi(x1, x2);
-					weight[k*m+l]=expf(level*(dphi*dphi+(y1-y2)*(y1-y2)))*saturatedr[l];
+					weight[k*m+l]=expf(level*((x1-x2)*(x1-x2)+(y1-y2)*(y1-y2)))*saturatedr[l];
 				}
 			}
 			std::vector<double> ss(m,1e-9);
@@ -106,8 +89,7 @@ void matchcost_cpu(int b,int n,int m,const float * xyz1,const float * xyz2,const
 				float y1=xyz1[j*2+1];
 				float x2=xyz2[k*2+0];
 				float y2=xyz2[k*2+1];
-                double dphi = get_dphi(x1, x2);
-				float d=sqrtf(dphi*dphi+(y2-y1)*(y2-y1))*match[j*m+k];
+				float d=sqrtf((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1))*match[j*m+k];
 				s+=d;
 			}
 		cost[0]=s;
@@ -128,9 +110,8 @@ void matchcostgrad_cpu(int b,int n,int m,const float * xyz1,const float * xyz2,c
 				float y2=xyz2[j*2+1];
 				float x1=xyz1[k*2+0];
 				float y1=xyz1[k*2+1];
-                double dphi = get_dphi(x1, x2);
-				float d=std::max(sqrtf(dphi*dphi+(y2-y1)*(y2-y1)),1e-20f);
-				float dx=match[k*m+j]*(dphi/d);
+				float d=std::max(sqrtf((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)),1e-20f);
+				float dx=match[k*m+j]*((x2-x1)/d);
 				float dy=match[k*m+j]*((y2-y1)/d);
 				grad1[k*2+0]-=dx;
 				grad1[k*2+1]-=dy;

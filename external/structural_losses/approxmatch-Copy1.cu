@@ -1,11 +1,6 @@
 //n<=4096, m<=1024
-
-
-
-
 __global__ void approxmatch(int b,int n,int m,const float * __restrict__ xyz1,const float * __restrict__ xyz2,float * __restrict__ match){
 	const int MaxN=4096,MaxM=1024;
-    const float pi = 3.14159265358979323846;
 	__shared__ float remainL[MaxN],remainR[MaxM],ratioR[MaxM],ratioL[MaxN];
 	__shared__ int listR[MaxM],lc;
 	float multiL,multiR;
@@ -44,13 +39,9 @@ __global__ void approxmatch(int b,int n,int m,const float * __restrict__ xyz1,co
 				//for (int l=0;l<m;l++){
 				for (int _l=0;_l<_lc;_l++){
 					int l=listR[_l];
-					float x2=xyz2[(i*m+l)*2+0];
-    float dphi = x2-x1;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
+					float x2=xyz2[(i*m+l)*2+0]-x1;
 					float y2=xyz2[(i*m+l)*2+1]-y1;
-					float w=expf(level*(dphi*dphi+y2*y2))*remainR[l];
+					float w=expf(level*(x2*x2+y2*y2))*remainR[l];
 					suml+=w;
 				}
 				ratioL[k]=remainL[k]/suml;
@@ -63,13 +54,9 @@ __global__ void approxmatch(int b,int n,int m,const float * __restrict__ xyz1,co
 				float x2=xyz2[(i*m+k)*2+0];
 				float y2=xyz2[(i*m+k)*2+1];
 				for (int l=0;l<n;l++){
-					float x1=xyz1[(i*n+l)*2+0];
-    float dphi = x2-x1;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
+					float x1=xyz1[(i*n+l)*2+0]-x2;
 					float y1=xyz1[(i*n+l)*2+1]-y2;
-					float w=expf(level*(dphi*dphi+y1*y1))*ratioL[l];
+					float w=expf(level*(x1*x1+y1*y1))*ratioL[l];
 					sumr+=w;
 				}
 				sumr*=remainR[k];
@@ -84,13 +71,9 @@ __global__ void approxmatch(int b,int n,int m,const float * __restrict__ xyz1,co
 				float y1=xyz1[(i*n+k)*2+1];
 				for (int _l=0;_l<_lc;_l++){
 					int l=listR[_l];
-					float x2=xyz2[(i*m+l)*2+0];
-    float dphi = x2-x1;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
+					float x2=xyz2[(i*m+l)*2+0]-x1;
 					float y2=xyz2[(i*m+l)*2+1]-y1;
-					float w=expf(level*(dphi*dphi+y2*y2))*ratioL[k]*ratioR[l];
+					float w=expf(level*(x2*x2+y2*y2))*ratioL[k]*ratioR[l];
 					match[i*n*m+l*n+k]+=w;
 					suml+=w;
 				}
@@ -104,7 +87,6 @@ void approxmatchLauncher(int b,int n,int m,const float * xyz1,const float * xyz2
 	approxmatch<<<32,512>>>(b,n,m,xyz1,xyz2,match);
 }
 __global__ void matchcost(int b,int n,int m,const float * __restrict__ xyz1,const float * __restrict__ xyz2,const float * __restrict__ match,float * __restrict__ out){
-    const float pi = 3.14159265358979323846;
 	__shared__ float allsum[512];
 	const int Block=256;
 	__shared__ float buf[Block*2];
@@ -122,13 +104,9 @@ __global__ void matchcost(int b,int n,int m,const float * __restrict__ xyz1,cons
 				for (int k=0;k<endk-k0;k++){
 					//float x2=xyz2[(i*m+k)*2+0]-x1;
 					//float y2=xyz2[(i*m+k)*2+1]-y1;
-					float x2=buf[k*2+0];
-    float dphi = x2-x1;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
+					float x2=buf[k*2+0]-x1;
 					float y2=buf[k*2+1]-y1;
-					float d=sqrtf(dphi*dphi+y2*y2);
+					float d=sqrtf(x2*x2+y2*y2);
 					subsum+=match[i*n*m+(k0+k)*n+j]*d;
 				}
 			}
@@ -150,7 +128,6 @@ void matchcostLauncher(int b,int n,int m,const float * xyz1,const float * xyz2,c
 	matchcost<<<32,512>>>(b,n,m,xyz1,xyz2,match,out);
 }
 __global__ void matchcostgrad(int b,int n,int m,const float * __restrict__ xyz1,const float * __restrict__ xyz2,const float * __restrict__ match,float * grad2){
-    const float pi = 3.14159265358979323846;
 	__shared__ float sum_grad[256*2];
 	for (int i=blockIdx.x;i<b;i+=gridDim.x){
 		int kbeg=m*blockIdx.y/gridDim.y;
@@ -160,14 +137,10 @@ __global__ void matchcostgrad(int b,int n,int m,const float * __restrict__ xyz1,
 			float y2=xyz2[(i*m+k)*2+1];
 			float subsumx=0,subsumy=0,subsumz=0;
 			for (int j=threadIdx.x;j<n;j+=blockDim.x){
-				float x1=xyz1[(i*n+j)*2+0];
+				float x1=x2-xyz1[(i*n+j)*2+0];
 				float y1=y2-xyz1[(i*n+j)*2+1];
-    float dphi = x1-x2;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
-				float d=match[i*n*m+k*n+j]/fmaxf(sqrtf(dphi*dphi+y1*y1),1e-20f);
-				subsumx+=dphi*d;
+				float d=match[i*n*m+k*n+j]/fmaxf(sqrtf(x1*x1+y1*y1),1e-20f);
+				subsumx+=x1*d;
 				subsumy+=y1*d;
 			}
 			sum_grad[threadIdx.x*2+0]=subsumx;

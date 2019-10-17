@@ -1,6 +1,4 @@
-
 __global__ void approxmatch(int b,int n,int m,const float * __restrict__ xyz1,const float * __restrict__ xyz2,float * __restrict__ match,float * temp){
-    const float pi = 3.14159265358979323846;
 	float * remainL=temp+blockIdx.x*(n+m)*2, * remainR=temp+blockIdx.x*(n+m)*2+n,*ratioL=temp+blockIdx.x*(n+m)*2+n+m,*ratioR=temp+blockIdx.x*(n+m)*2+n+m+n;
 	float multiL,multiR;
 	if (n>=m){
@@ -46,11 +44,7 @@ __global__ void approxmatch(int b,int n,int m,const float * __restrict__ xyz1,co
 					for (int l=0;l<lend;l++){
 						float x2=buf[l*3+0];
 						float y2=buf[l*3+1];
-    float dphi = x2-x1;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
-						float d=level*(dphi*dphi+(y2-y1)*(y2-y1));
+						float d=level*((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
 						float w=__expf(d)*buf[l*3+2];
 						suml+=w;
 					}
@@ -66,11 +60,7 @@ __global__ void approxmatch(int b,int n,int m,const float * __restrict__ xyz1,co
 				for (int l=0;l<m;l++){
 					float x2=xyz2[i*m*2+l*2+0];
 					float y2=xyz2[i*m*2+l*2+1];
-    float dphi = x2-x1;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
-					float w=expf(level*(dphi*dphi+(y2-y1)*(y2-y1)))*remainR[l];
+					float w=expf(level*((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)))*remainR[l];
 					suml+=w;
 				}
 				ratioL[k]=remainL[k]/suml;
@@ -95,11 +85,7 @@ __global__ void approxmatch(int b,int n,int m,const float * __restrict__ xyz1,co
 					for (int k=0;k<kend;k++){
 						float x1=buf[k*3+0];
 						float y1=buf[k*3+1];
-    float dphi = x2-x1;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
-						float w=__expf(level*(dphi*dphi+(y2-y1)*(y2-y1)))*buf[k*3+2];
+						float w=__expf(level*((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)))*buf[k*3+2];
 						sumr+=w;
 					}
 					__syncthreads();
@@ -118,11 +104,7 @@ __global__ void approxmatch(int b,int n,int m,const float * __restrict__ xyz1,co
 				for (int k=0;k<n;k++){
 					float x1=xyz1[i*n*2+k*2+0];
 					float y1=xyz1[i*n*2+k*2+1];
-    float dphi = x2-x1;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
-					float w=expf(level*(dphi*dphi+(y2-y1)*(y2-y1)))*ratioL[k];
+					float w=expf(level*((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)))*ratioL[k];
 					sumr+=w;
 				}
 				sumr*=remainR[l];
@@ -152,11 +134,7 @@ __global__ void approxmatch(int b,int n,int m,const float * __restrict__ xyz1,co
 						for (int l=0;l<lend;l++){
 							float x2=buf[l*3+0];
 							float y2=buf[l*3+1];
-    float dphi = x2-x1;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
-							float w=__expf(level*(dphi*dphi+(y2-y1)*(y2-y1)))*rl*buf[l*3+2];
+							float w=__expf(level*((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)))*rl*buf[l*3+2];
 							match[i*n*m+(l0+l)*n+k]+=w;
 							suml+=w;
 						}
@@ -173,11 +151,7 @@ __global__ void approxmatch(int b,int n,int m,const float * __restrict__ xyz1,co
 				for (int l=0;l<m;l++){
 					float x2=xyz2[i*m*2+l*2+0];
 					float y2=xyz2[i*m*2+l*2+1];
-    float dphi = x2-x1;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
-					float w=expf(level*(dphi*dphi+(y2-y1)*(y2-y1)))*ratioL[k]*ratioR[l];
+					float w=expf(level*((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)))*ratioL[k]*ratioR[l];
 					match[i*n*m+l*n+k]+=w;
 					suml+=w;
 				}
@@ -191,7 +165,6 @@ void approxmatchLauncher(int b,int n,int m,const float * xyz1,const float * xyz2
 	approxmatch<<<32,512>>>(b,n,m,xyz1,xyz2,match,temp);
 }
 __global__ void matchcost(int b,int n,int m,const float * __restrict__ xyz1,const float * __restrict__ xyz2,const float * __restrict__ match,float * __restrict__ out){
-    const float pi = 3.14159265358979323846;
 	__shared__ float allsum[512];
 	const int Block=1024;
 	__shared__ float buf[Block*2];
@@ -213,11 +186,7 @@ __global__ void matchcost(int b,int n,int m,const float * __restrict__ xyz1,cons
 					for (int l=0;l<lend;l++){
 						float x2=buf[l*2+0];
 						float y2=buf[l*2+1];
-    float dphi = x2-x1;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
-						float d=sqrtf(dphi*dphi+(y2-y1)*(y2-y1));
+						float d=sqrtf((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
 						subsum+=d*match[i*n*m+(l0+l)*n+k];
 					}
 				}
@@ -240,7 +209,6 @@ void matchcostLauncher(int b,int n,int m,const float * xyz1,const float * xyz2,c
 	matchcost<<<32,512>>>(b,n,m,xyz1,xyz2,match,out);
 }
 __global__ void matchcostgrad2(int b,int n,int m,const float * __restrict__ xyz1,const float * __restrict__ xyz2,const float * __restrict__ match,float * __restrict__ grad2){
-    const float pi = 3.14159265358979323846;
 	__shared__ float sum_grad[256*2];
 	for (int i=blockIdx.x;i<b;i+=gridDim.x){
 		int kbeg=m*blockIdx.y/gridDim.y;
@@ -250,14 +218,10 @@ __global__ void matchcostgrad2(int b,int n,int m,const float * __restrict__ xyz1
 			float y2=xyz2[(i*m+k)*2+1];
 			float subsumx=0,subsumy=0,subsumz=0;
 			for (int j=threadIdx.x;j<n;j+=blockDim.x){
-				float x1=xyz1[(i*n+j)*2+0];
+				float x1=x2-xyz1[(i*n+j)*2+0];
 				float y1=y2-xyz1[(i*n+j)*2+1];
-    float dphi = x2-x1;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
-				float d=match[i*n*m+k*n+j]*rsqrtf(fmaxf(dphi*dphi+y1*y1,1e-20f));
-				subsumx+=dphi*d;
+				float d=match[i*n*m+k*n+j]*rsqrtf(fmaxf(x1*x1+y1*y1,1e-20f));
+				subsumx+=x1*d;
 				subsumy+=y1*d;
 			}
 			sum_grad[threadIdx.x*2+0]=subsumx;
@@ -280,7 +244,6 @@ __global__ void matchcostgrad2(int b,int n,int m,const float * __restrict__ xyz1
 	}
 }
 __global__ void matchcostgrad1(int b,int n,int m,const float * __restrict__ xyz1,const float * __restrict__ xyz2,const float * __restrict__ match,float * __restrict__ grad1){
-    const float pi = 3.14159265358979323846;
 	for (int i=blockIdx.x;i<b;i+=gridDim.x){
 		for (int l=threadIdx.x;l<n;l+=blockDim.x){
 			float x1=xyz1[i*n*2+l*2+0];
@@ -289,12 +252,8 @@ __global__ void matchcostgrad1(int b,int n,int m,const float * __restrict__ xyz1
 			for (int k=0;k<m;k++){
 				float x2=xyz2[i*m*2+k*2+0];
 				float y2=xyz2[i*m*2+k*2+1];
-    float dphi = x1-x2;
-    dphi = dphi + pi;
-    dphi = fmod(dphi,(2*pi));
-    dphi = dphi - pi;
-				float d=match[i*n*m+k*n+l]*rsqrtf(fmaxf(dphi*dphi+(y1-y2)*(y1-y2),1e-20f));
-				dx+=dphi*d;
+				float d=match[i*n*m+k*n+l]*rsqrtf(fmaxf((x1-x2)*(x1-x2)+(y1-y2)*(y1-y2),1e-20f));
+				dx+=(x1-x2)*d;
 				dy+=(y1-y2)*d;
 			}
 			grad1[i*n*2+l*2+0]=dx;
