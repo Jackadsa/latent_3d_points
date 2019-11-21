@@ -7,7 +7,123 @@ import numpy as np
 import tensorflow as tf
 
 from . encoders_decoders_vae import encoder_with_convs_and_symmetry, decoder_with_fc_only, decoder_with_convs_only, decoder_with_convs_and_fc
-from . encoders_decoders_vae import variational_encoder_with_convs_and_symmetry, variational_encoder_with_convs_and_symmetry_bnormafter
+from . encoders_decoders_vae import variational_encoder_with_convs_and_symmetry
+
+def jack_vae_template_1k(n_pc_points, bneck_size, bneck_post_mlp=False):
+    ''' Single class experiments.
+    '''
+#     if n_pc_points != 2048:
+#         raise ValueError()
+
+    encoder = variational_encoder_with_convs_and_symmetry
+    decoder = decoder_with_convs_only
+
+    n_input = [n_pc_points, 2]
+
+    encoder_args = {'n_filters': [128, 128],
+                    'filter_sizes': [1],
+                    'strides': [1],
+                    'b_norm': True,
+                    'verbose': True,
+                    'symmetry': tf.reduce_mean,
+                    'fully_connected_layers': [128,128],
+                    'latent_size':bneck_size
+                    }
+
+    decoder_args = {'n_filters': [128,128,2],
+                    'filter_sizes': [1],
+                    'strides': [1],
+                    'upsample_sizes': [4,2,None],
+                    'b_norm': True,
+                    'b_norm_finish': True,
+                    'verbose': True,
+                    'fully_connected_layers': [128,125*3],
+                    'reshape_last_connected': [125,3]
+                    }
+
+    if bneck_post_mlp:
+        encoder_args['n_filters'].pop()
+        decoder_args['layer_sizes'][0] = bneck_size
+
+    return encoder, decoder, encoder_args, decoder_args
+
+
+def jack_vae_template_1j(n_pc_points, bneck_size, bneck_post_mlp=False):
+    ''' Single class experiments.
+    '''
+#     if n_pc_points != 2048:
+#         raise ValueError()
+
+    encoder = variational_encoder_with_convs_and_symmetry
+    decoder = decoder_with_convs_only
+
+    n_input = [n_pc_points, 2]
+
+    encoder_args = {'n_filters': [128, 128],
+                    'filter_sizes': [1],
+                    'strides': [1],
+                    'b_norm': True,
+                    'verbose': True,
+                    'symmetry': tf.reduce_mean,
+                    'fully_connected_layers': [128,128],
+                    'latent_size':bneck_size
+                    }
+
+    decoder_args = {'n_filters': [128,128,2],
+                    'filter_sizes': [2],
+                    'strides': [1],
+                    'upsample_sizes': [4,2,None],
+                    'b_norm': True,
+                    'b_norm_finish': True,
+                    'verbose': True,
+                    'fully_connected_layers': [128,125*3],
+                    'reshape_last_connected': [125,3]
+                    }
+
+    if bneck_post_mlp:
+        encoder_args['n_filters'].pop()
+        decoder_args['layer_sizes'][0] = bneck_size
+
+    return encoder, decoder, encoder_args, decoder_args
+
+
+def jack_vae_template_4(n_pc_points, bneck_size, bneck_post_mlp=False):
+    ''' Single class experiments.
+    '''
+#     if n_pc_points != 2048:
+#         raise ValueError()
+
+    encoder = variational_encoder_with_convs_and_symmetry
+    decoder = decoder_with_convs_only
+
+    n_input = [n_pc_points, 2]
+
+    encoder_args = {'n_filters': [128, 128],
+                    'filter_sizes': [1],
+                    'strides': [1],
+                    'b_norm': True,
+                    'verbose': True,
+                    'symmetry': tf.reduce_mean,
+                    'fully_connected_layers': [128,128],
+                    'latent_size':bneck_size
+                    }
+
+    decoder_args = {'n_filters': [128,128,128,2],
+                    'filter_sizes': [4,4,4,1],
+                    'strides': [1],
+                    'upsample_sizes': [2,2,2,None],
+                    'b_norm': True,
+                    'b_norm_finish': True,
+                    'verbose': True,
+                    'fully_connected_layers': [128,125*3],
+                    'reshape_last_connected': [125,3]
+                    }
+
+    if bneck_post_mlp:
+        encoder_args['n_filters'].pop()
+        decoder_args['layer_sizes'][0] = bneck_size
+
+    return encoder, decoder, encoder_args, decoder_args
 
 def jack_vae_template_3(n_pc_points, bneck_size, bneck_post_mlp=False):
     ''' Single class experiments.
@@ -105,7 +221,8 @@ def jack_vae_template_1(n_pc_points, bneck_size, bneck_post_mlp=False):
                     'verbose': True,
                     'symmetry': tf.reduce_mean,
                     'fully_connected_layers': [128,128],
-                    'latent_size':bneck_size
+                    'latent_size':bneck_size,
+                    'bnorm_momentum':0.99
                     }
 
     decoder_args = {'n_filters': [128,128,2],
@@ -124,6 +241,47 @@ def jack_vae_template_1(n_pc_points, bneck_size, bneck_post_mlp=False):
         decoder_args['layer_sizes'][0] = bneck_size
 
     return encoder, decoder, encoder_args, decoder_args
+
+def jack_vae_template_1_changemom2(n_pc_points, bneck_size, bneck_post_mlp=False):
+    ''' Single class experiments.
+    '''
+#     if n_pc_points != 2048:
+#         raise ValueError()
+
+    encoder = variational_encoder_with_convs_and_symmetry
+    decoder = decoder_with_convs_and_fc
+
+    n_input = [n_pc_points, 2]
+
+    encoder_args = {'n_filters': [128, 128],
+                    'filter_sizes': [1],
+                    'strides': [1],
+                    'b_norm': True,
+                    'verbose': True,
+                    'symmetry': tf.reduce_mean,
+                    'fully_connected_layers': [128,128],
+                    'latent_size':bneck_size,
+                    'bnorm_momentum':0.99
+                    }
+
+    decoder_args = {'n_filters': [128,128,2],
+                    'filter_sizes': [1],
+                    'strides': [1],
+                    'upsample_sizes': [4,2,None],
+                    'b_norm': True,
+                    'b_norm_finish': True,
+                    'verbose': True,
+                    'fully_connected_layers': [128,125*3],
+                    'reshape_last_connected': [125,3],
+                    'bnorm_momentum':0.99
+                    }
+
+    if bneck_post_mlp:
+        encoder_args['n_filters'].pop()
+        decoder_args['layer_sizes'][0] = bneck_size
+
+    return encoder, decoder, encoder_args, decoder_args
+
 
 def jack_vae_template_2(n_pc_points, bneck_size, bneck_post_mlp=False):
     ''' Single class experiments.
