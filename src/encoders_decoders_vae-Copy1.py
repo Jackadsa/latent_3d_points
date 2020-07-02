@@ -29,7 +29,7 @@ def variational_encoder_with_convs_and_symmetry(in_signal, n_filters=[64, 128, 2
                                         symmetry=tf.reduce_mean, dropout_prob=None, pool=avg_pool_1d, pool_sizes=None, scope=None,
                                         reuse=False, padding='same', verbose=False, latent_size=1, conv_op=conv_1d,
                                         fully_connected_layers = None, weights_init = 'xavier',bias_init = 'xavier',
-                                        bnorm_momentum=0.9, bnorm_clipping={'rmin':1,'rmax':1,'dmax':0}, rescale_logvar = False,
+                                        bnorm_momentum=0.9, bnorm_clipping={'rmin':1,'rmax':1,'dmax':0}, rescale_logvar = True,
                                          EFN = False):
     '''An Encoder (recognition network), which maps inputs onto a latent space.
     '''
@@ -196,8 +196,8 @@ def variational_encoder_with_convs_and_symmetry(in_signal, n_filters=[64, 128, 2
         epsilon = K.random_normal(shape=(batch, dim))
         if rescale_logvar:
             logvar_cond = tf.greater(z_log_var,0.)
-            std = tf.where(logvar_cond, tf.sqrt(z_log_var + 1.), tf.exp(0.5 * z_log_var))
-            return z_mean + std * epsilon
+            logvar_rescaled = tf.where(logvar_cond, z_log_var + 1., tf.exp(0.5 * z_log_var))
+            return z_mean + logvar_rescaled * epsilon
         else:
             return z_mean + tf.exp(0.5 * z_log_var) * epsilon
 
@@ -311,8 +311,7 @@ def encoder_with_convs_and_symmetry(in_signal, n_filters=[64, 128, 256, 1024], f
 def decoder_with_fc_only(latent_signal, layer_sizes=[], b_norm=True, non_linearity=tf.nn.relu,
                          regularizer=None, weight_decay=0.001, reuse=False, scope=None, dropout_prob=None,
                          b_norm_finish=False, verbose=False, reshape_last_connected=None,
-                         bnorm_momentum = 0.99, bnorm_clipping={'rmin':1,'rmax':1,'dmax':0},
-                         output_pt = False):
+                        bnorm_momentum = 0.99, bnorm_clipping={'rmin':1,'rmax':1,'dmax':0}):
     '''A decoding network which maps points from the latent space back onto the data space.
     '''
     if verbose:
@@ -363,55 +362,30 @@ def decoder_with_fc_only(latent_signal, layer_sizes=[], b_norm=True, non_lineari
     # Last decoding layer never has a non-linearity.
     name = 'decoder_fc_' + str(n_layers - 1)
     scope_i = expand_scope_by_name(scope, name)
-    coords_layer = fully_connected(layer, layer_sizes[n_layers - 1], activation='linear', weights_init='xavier', name=name, regularizer=regularizer, weight_decay=weight_decay, reuse=reuse, scope=scope_i)
+    layer = fully_connected(layer, layer_sizes[n_layers - 1], activation='linear', weights_init='xavier', name=name, regularizer=regularizer, weight_decay=weight_decay, reuse=reuse, scope=scope_i)
     if verbose:
-        print name, 'FC params = ', np.prod(coords_layer.W.get_shape().as_list()) + np.prod(coords_layer.b.get_shape().as_list()),
+        print name, 'FC params = ', np.prod(layer.W.get_shape().as_list()) + np.prod(layer.b.get_shape().as_list()),
 
     if b_norm_finish:
         name += '_bnorm'
         scope_i = expand_scope_by_name(scope, name)
         #layer = batch_normalization(layer, name=name, reuse=reuse, scope=scope_i)
-        coords_layer = tf.keras.layers.BatchNormalization(axis=-1,
+        layer = tf.keras.layers.BatchNormalization(axis=-1,
                                                    renorm=True,
                                                    name=name,
                                                    momentum=bnorm_momentum,
                                                    renorm_momentum=bnorm_momentum,
                                                    renorm_clipping=bnorm_clipping,
-                                                   epsilon=1e-5)(coords_layer)
+                                                   epsilon=1e-5)(layer)
 #         if verbose:
 #             print 'bnorm params = ', np.prod(layer.beta.get_shape().as_list()) + np.prod(layer.gamma.get_shape().as_list())
     if reshape_last_connected is not None:
-        coords_layer = reshape(coords_layer,[-1,reshape_last_connected[0],reshape_last_connected[1]])
+        layer = reshape(layer,[-1,reshape_last_connected[0],reshape_last_connected[1]])
     if verbose:
-        print coords_layer
-        print 'output size:', np.prod(coords_layer.get_shape().as_list()[1:]), '\n'
+        print layer
+        print 'output size:', np.prod(layer.get_shape().as_list()[1:]), '\n'
 
-    if output_pt:
-        name = 'decoder_fc_pt'
-        pt_layer = fully_connected(layer, layer_sizes[n_layers - 1]/2, activation='linear', weights_init='xavier', name=name, regularizer=regularizer, weight_decay=weight_decay, reuse=reuse, scope=scope_i)
-        if verbose:
-            print name, 'FC params = ', np.prod(pt_layer.W.get_shape().as_list()) + np.prod(pt_layer.b.get_shape().as_list()),
-        
-        if b_norm_finish:
-            name += '_bnorm'
-            scope_i = expand_scope_by_name(scope, name)
-            layer = batch_normalization(layer, name=name, reuse=reuse, scope=scope_i)
-            pt_layer = tf.keras.layers.BatchNormalization(axis=-1,
-                                                       renorm=True,
-                                                       name=name,
-                                                       momentum=bnorm_momentum,
-                                                       renorm_momentum=bnorm_momentum,
-                                                       renorm_clipping=bnorm_clipping,
-                                                       epsilon=1e-5)(pt_layer)
-            
-        pt_layer = tf.keras.layers.Softmax()(pt_layer)
-        
-        if verbose:
-            print pt_layer
-        
-        return [pt_layer, coords_layer]
-    else:
-        return coords_layer
+    return layer
 
 
 def decoder_with_convs_only(in_signal, n_filters, filter_sizes, strides, padding='same', b_norm=True, non_linearity=tf.nn.relu,

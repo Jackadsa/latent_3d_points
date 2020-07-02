@@ -21,7 +21,14 @@ class VAEConfiguration():
                  saver_step=None, train_dir=None, z_rotate=False, loss='chamfer', gauss_augment=None,
                  saver_max_to_keep=None, loss_display_step=1, debug=False,
                  n_z=None, n_output=None, latent_vs_recon=1.0, consistent_io=None,
-                 beta = 1., sinkhorn_reg = 0.1,stopThr=1e-5, numItermax = 1000,close_with_tanh = True, adaptive_min = 0.01):
+                 beta = 1., sinkhorn_reg = 0.1,stopThr=1e-5, numItermax = 1000,close_with_tanh = True,
+                 adaptive_min = 0.01, rescale_logvar = True, output_pt = False,
+                 reduceLRonplateau = False,
+                 reduceLRonplateau_patience = 3,
+                 reduceLRonplateau_threshold = 1e-5,
+                 reduceLRonplateau_step = np.sqrt(0.1),
+                 reduceLRonplateau_verbose = True,
+                 stop_patience = 5):
 
         # Parameters for any AE
         self.n_input = n_input
@@ -49,6 +56,16 @@ class VAEConfiguration():
         self.numItermax = numItermax
         self.adaptive_min = adaptive_min
         self.beta = beta
+        self.rescale_logvar = rescale_logvar
+        self.output_pt = output_pt
+        
+        
+        self.reduceLRonplateau = reduceLRonplateau
+        self.reduceLRonplateau_patience = reduceLRonplateau_patience
+        self.reduceLRonplateau_threshold = reduceLRonplateau_threshold
+        self.reduceLRonplateau_step = reduceLRonplateau_step
+        self.reduceLRonplateau_verbose = reduceLRonplateau_verbose
+        self.stop_patience = stop_patience
 
         # Used in VAE
         self.latent_vs_recon = np.array([latent_vs_recon], dtype=np.float32)[0]
@@ -94,7 +111,12 @@ class Configuration():
                  saver_step=None, train_dir=None, z_rotate=False, loss='chamfer', gauss_augment=None,
                  saver_max_to_keep=None, loss_display_step=1, debug=False,
                  n_z=None, n_output=None, latent_vs_recon=1.0, consistent_io=None,
-                 beta = 1):
+                 beta = 1,
+                 reduceLRonplateau = False,
+                 reduceLRonplateau_patience = 2,
+                 reduceLRonplateau_threshold = 1e-5,
+                 reduceLRonplateau_step = np.sqrt(0.1),
+                 reduceLRonplateau_verbose = True):
 
         # Parameters for any AE
         self.n_input = n_input
@@ -117,6 +139,12 @@ class Configuration():
         self.training_epochs = training_epochs
         self.debug = debug
         self.beta = beta
+        
+        self.reduceLRonplateau = reduceLRonplateau
+        self.reduceLRonplateau_patience = reduceLRonplateau_patience
+        self.reduceLRonplateau_threshold = reduceLRonplateau_threshold
+        self.reduceLRonplateau_step = reduceLRonplateau_step
+        self.reduceLRonplateau_verbose = reduceLRonplateau_verbose
 
         # Used in VAE
         self.latent_vs_recon = np.array([latent_vs_recon], dtype=np.float32)[0]
@@ -166,7 +194,7 @@ class VarAutoEncoder(Neural_Net):
         self.n_input = configuration.n_input
         self.n_output = configuration.n_output
         
-        self.beta = tf.placeholder(tf.float32, [None])
+        self.beta = tf.placeholder(tf.float32)
 
         in_shape = [None] + self.n_input
         out_shape = [None] + self.n_output
@@ -187,19 +215,21 @@ class VarAutoEncoder(Neural_Net):
             The loss of the mini-batch.
             The reconstructed (output) point-clouds.
         '''
+        feed_LR = False
+        if self.configuration.exists_and_is_not_none('reduceLRonplateau'):
+            if self.configuration.reduceLRonplateau:
+                feed_LR = True
+                
         is_training(True, session=self.sess)
         try:
-            if separate_loss:
-                if GT is not None:
-                    _, loss, recon_loss, kl_loss, recon = self.sess.run((self.train_step, self.loss, self.recon_loss, self.kl_loss, self.x_reconstr), feed_dict={self.x: X, self.gt: GT, self.beta:[beta]})
-                else:
-                    _, loss, recon_loss, kl_loss, recon = self.sess.run((self.train_step, self.loss, self.recon_loss, self.kl_loss, self.x_reconstr), feed_dict={self.x: X, self.beta:[beta]})
-            
+            if feed_LR:
+                _, loss, recon_loss, kl_loss, recon = self.sess.run((self.train_step, self.loss, self.recon_loss, self.kl_loss, self.x_reconstr), feed_dict={self.x: X, self.beta:beta, self.lr:self.current_lr})
             else:
-                if GT is not None:
-                    _, loss, recon = self.sess.run((self.train_step, self.loss, self.x_reconstr), feed_dict={self.x: X, self.gt: GT, self.beta:[beta]})
+                if separate_loss:
+                    _, loss, recon_loss, kl_loss, recon = self.sess.run((self.train_step, self.loss, self.recon_loss, self.kl_loss, self.x_reconstr), feed_dict={self.x: X, self.beta:beta})
+
                 else:
-                    _, loss, recon = self.sess.run((self.train_step, self.loss, self.x_reconstr), feed_dict={self.x: X, self.beta:[beta]})
+                    _, loss, recon = self.sess.run((self.train_step, self.loss, self.x_reconstr), feed_dict={self.x: X, self.beta:beta})
 
             is_training(False, session=self.sess)
         except Exception:
@@ -212,7 +242,29 @@ class VarAutoEncoder(Neural_Net):
         else:
             return recon, loss
 
-    def reconstruct(self, X, GT=None, compute_loss=True, beta = 1, separate_loss = False):
+    def reconstruct(self, X, GT=None, compute_loss=True, beta = 1, separate_loss = False, get_pt_out = False):
+        '''Use AE to reconstruct given data.
+        GT will be used to measure the loss (e.g., if X is a noisy version of the GT)'''
+        if get_pt_out:
+            return self.reconstruct_get_pt_out(X, GT=GT, compute_loss=compute_loss, beta = beta, separate_loss = separate_loss)
+        if compute_loss:
+            loss = self.loss
+        else:
+            loss = self.no_op
+            
+        if separate_loss:
+            if GT is None:
+                return self.sess.run((self.x_reconstr, self.loss, self.recon_loss, self.kl_loss), feed_dict={self.x: X, self.beta: beta})
+            else:
+                return self.sess.run((self.x_reconstr, loss, self.recon_loss, self.kl_loss), feed_dict={self.x: X, self.gt: GT, self.beta: beta})
+        else:
+            if GT is None:
+                return self.sess.run((self.x_reconstr, loss), feed_dict={self.x: X, self.beta: beta})
+            else:
+                return self.sess.run((self.x_reconstr, loss), feed_dict={self.x: X, self.gt: GT, self.beta: beta})
+            
+            
+    def reconstruct_get_pt_out(self, X, GT=None, compute_loss=True, beta = 1, separate_loss = False):
         '''Use AE to reconstruct given data.
         GT will be used to measure the loss (e.g., if X is a noisy version of the GT)'''
         if compute_loss:
@@ -222,14 +274,14 @@ class VarAutoEncoder(Neural_Net):
             
         if separate_loss:
             if GT is None:
-                return self.sess.run((self.x_reconstr, self.loss, self.recon_loss, self.kl_loss), feed_dict={self.x: X, self.beta: [beta]})
+                return self.sess.run((self.pt_out, self.x_reconstr, self.loss, self.recon_loss, self.kl_loss), feed_dict={self.x: X, self.beta: beta})
             else:
-                return self.sess.run((self.x_reconstr, loss, self.recon_loss, self.kl_loss), feed_dict={self.x: X, self.gt: GT, self.beta: [beta]})
+                return self.sess.run((self.pt_out, self.x_reconstr, loss, self.recon_loss, self.kl_loss), feed_dict={self.x: X, self.gt: GT, self.beta: beta})
         else:
             if GT is None:
-                return self.sess.run((self.x_reconstr, loss), feed_dict={self.x: X, self.beta: [beta]})
+                return self.sess.run((self.pt_out, self.x_reconstr, loss), feed_dict={self.x: X, self.beta: beta})
             else:
-                return self.sess.run((self.x_reconstr, loss), feed_dict={self.x: X, self.gt: GT, self.beta: [beta]})
+                return self.sess.run((self.pt_out, self.x_reconstr, loss), feed_dict={self.x: X, self.gt: GT, self.beta: beta})
 
     def transform(self, X):
         '''Transform data by mapping it into the latent space.'''
@@ -256,10 +308,13 @@ class VarAutoEncoder(Neural_Net):
 
         return self.sess.run((self.x_reconstr), {self.z: all_z})
 
-    def decode(self, z):
+    def decode(self, z, get_pt_out = False):
         if np.ndim(z) == 1:  # single example
             z = np.expand_dims(z, 0)
-        return self.sess.run((self.x_reconstr), {self.z: z})
+        if get_pt_out:
+            return self.sess.run((self.pt_out,self.x_reconstr), {self.z: z})
+        else:
+            return self.sess.run((self.x_reconstr), {self.z: z})
 
     def train(self, train_data, configuration, log_file=None, held_out_data=None, separate_loss = True):
         c = configuration
@@ -268,9 +323,17 @@ class VarAutoEncoder(Neural_Net):
         if c.saver_step is not None:
             create_dir(c.train_dir)
             
-
+        feed_LR = False
+        if c.exists_and_is_not_none('reduceLRonplateau'):
+            if c.reduceLRonplateau:
+                feed_LR = True
+        self.num_wait = 0
+        self.num_wait_stop = 0
+        if feed_LR:
+            self.current_best = 1e10
         for _ in xrange(c.training_epochs):
-            
+
+
             if separate_loss:
                 loss, recon_loss, kl_loss, duration = self._single_epoch_train(train_data, c, separate_loss = separate_loss)
                 epoch = int(self.sess.run(self.increment_epoch))
@@ -278,9 +341,9 @@ class VarAutoEncoder(Neural_Net):
 
                 if epoch % c.loss_display_step == 0:
                     #print(epoch, duration, loss)
-                    print("Epoch:", '%04d' % (epoch),'training time (minutes)=', "{:.2f}".format(duration / 60.0),"loss=", "{:.5f}".format(loss),"recon loss=", "{:.5f}".format(recon_loss),"kl loss=", "{:.5f}".format(kl_loss))
+                    print("Epoch:", '%04d' % (epoch),'training time (minutes)=', "{:.2f}".format(duration / 60.0),"loss=", "{:.4E}".format(loss),"recon loss=", "{:.4E}".format(recon_loss),"kl loss=", "{:.4E}".format(kl_loss))
                     if log_file is not None:
-                        log_file.write('%04d\t%.5f\t%.5f\t%.5f\t%.2f\n' % (epoch, loss, recon_loss, kl_loss, duration / 60.0))
+                        log_file.write('%04d\t%.4E\t%.4E\t%.4E\t%.2f\n' % (epoch, loss, recon_loss, kl_loss, duration / 60.0))
 
                 # Save the models checkpoint periodically.
                 if c.saver_step is not None and (epoch % c.saver_step == 0 or epoch - 1 == 0):
@@ -293,9 +356,42 @@ class VarAutoEncoder(Neural_Net):
 
                 if held_out_data is not None and c.exists_and_is_not_none('held_out_step') and (epoch % c.held_out_step == 0):
                     loss, recon_loss, kl_loss, duration = self._single_epoch_train(held_out_data, c, only_fw=True, separate_loss = separate_loss)
-                    print("Held Out Data :", 'forward time (minutes)=', "{:.2f}".format(duration / 60.0),"loss=", "{:.5f}".format(loss),"recon loss=", "{:.5f}".format(recon_loss),"kl loss=", "{:.5f}".format(kl_loss))
+                    print("Held Out Data :", 'forward time (minutes)=', "{:.2f}".format(duration / 60.0),"loss=", "{:.4e}".format(loss),"recon loss=", "{:.4E}".format(recon_loss),"kl loss=", "{:.4E}".format(kl_loss))
+                    
                     if log_file is not None:
-                        log_file.write('%04d\t%.5f\t%.5f\t%.5f\t%.2f\n' % (epoch, loss, recon_loss, kl_loss, duration / 60.0))
+                        log_file.write('%04d\t%.4E\t%.4E\t%.4E\t%.2f\n' % (epoch, loss, recon_loss, kl_loss, duration / 60.0))
+                        
+                    if feed_LR:
+                        if loss < self.current_best - c.reduceLRonplateau_threshold:
+                            self.current_best = loss
+                            self.num_wait = 0
+                            self.num_wait_stop = 0
+                        else:
+                            self.num_wait += 1
+                            self.num_wait_stop += 1
+
+                        if self.num_wait_stop > c.stop_patience:
+                            checkpoint_path = osp.join(c.train_dir, MODEL_SAVER_ID)
+                            self.saver.save(self.sess, checkpoint_path, global_step=self.epoch)
+                            if c.reduceLRonplateau_verbose:
+                                print "Early stopping\n"
+                                if log_file is not None:
+                                    log_file.write('Early stopping\n')
+                                    
+                            break
+                            
+                        if self.num_wait > c.reduceLRonplateau_patience:
+                            checkpoint_path = osp.join(c.train_dir, MODEL_SAVER_ID)
+                            self.saver.save(self.sess, checkpoint_path, global_step=self.epoch)
+                            self.current_lr = self.current_lr * c.reduceLRonplateau_step
+                            self.num_wait = 0
+                            if c.reduceLRonplateau_verbose:
+                                print "Changing LR to ", "{:.2E}".format(self.current_lr)
+                                
+                                if log_file is not None:
+                                    log_file.write('Changing LR to\t%.2e\n' % (self.current_lr))
+                    
+
             else:        
                     
                 loss, duration = self._single_epoch_train(train_data, c)
@@ -476,10 +572,13 @@ class AutoEncoder(Neural_Net):
 
         return self.sess.run((self.x_reconstr), {self.z: all_z})
 
-    def decode(self, z):
+    def decode(self, z, get_pt_out = False):
         if np.ndim(z) == 1:  # single example
             z = np.expand_dims(z, 0)
-        return self.sess.run((self.x_reconstr), {self.z: z})
+        if get_pt_out:
+            return self.sess.run((self.pt_out,self.x_reconstr), {self.z: z})
+        else:
+            return self.sess.run((self.x_reconstr), {self.z: z})
 
     def train(self, train_data, configuration, log_file=None, held_out_data=None):
         c = configuration
